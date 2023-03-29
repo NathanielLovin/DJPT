@@ -53,6 +53,55 @@ def logged_in():
     return jsonify(True)
   return jsonify(False)
 
+def find_song(potential_song, sp):
+  results = sp.search(q="track:" + potential_song[0] + " artist:" + potential_song[1], limit=1)
+  if len(results['tracks']['items']) > 0:
+    song = results['tracks']['items'][0]
+    artist = ""
+    for art in song['artists']:
+      artist += art['name'] + ", "
+    artist = artist[:len(artist)-2]
+    print(song)
+    return {"name": song['name'], "artist": artist, "album": song['album']['name'], "image": song['album']['images'][0]['url'], "link":song["external_urls"]["spotify"], "id": song['id']}
+  else:
+    return None
+
+def get_songs(output):
+  songs = []
+  for i in range(len(output)):
+    if " - " in output[i]:
+      output[i] = output[i].split(" - ")
+    elif " by " in output[i]:
+      output[i] = output[i].split(" by ")
+    else:
+      attempts += 1
+      break
+    print(output[i][0] + " by " + output[i][1])
+    #Remove leading numbers
+    while output[i][0][0].isdigit() or output[i][0][0] == ".":
+      output[i][0] = output[i][0][2:]
+    #Remove quotes from the song name
+    output[i][0] = output[i][0].replace('"', "")
+    #Remove apostrophes from the song name and artist name
+    output[i][0] = output[i][0].replace("'", "")
+    output[i][1] = output[i][1].replace("'", "")
+    #Remove ft. and feat. from the artist name
+    if " ft. " in output[i][1]:
+      output[i][1] = output[i][1].split(" ft. ")[0]
+    if " feat. " in output[i][1]:
+      output[i][1] = output[i][1].split(" feat. ")[0]
+  sp = spotipy.Spotify(auth_manager=auth_manger_client)
+  for i in range(len(output)):
+    result = find_song(output[i], sp)
+    if result:
+      songs.append(result)
+      continue
+    output[i][0] = output[i][0][:len(output[i][0])//2]
+    result = find_song(output[i], sp)
+    if result:
+      songs.append(result)
+  return songs
+
 @app.route("/playlist/generate", methods=["POST"])
 def generate_playlist():
   #Get number and prompt from request
@@ -67,7 +116,6 @@ def generate_playlist():
   attempts = 0
   songs = []
   while len(songs) < 0.75*num and attempts < 5:
-    songs = []
     messages=[{"role": "system", "content": "Create a playlist with " + str(num) + " songs that would fit the following description. Be creative with song selection but only include real songs. Create the playlist as a numbered list in the form 'song by artist'. Do not include any other information in your response."},
               {"role": "user", "content": prompt}]
     response = openai.ChatCompletion.create(model="gpt-4", messages=messages)
@@ -79,52 +127,8 @@ def generate_playlist():
     output = output.split("\n")
     #Remove lines that are empty
     output = [x for x in output if x != '']
-    for i in range(len(output)):
-      if " - " in output[i]:
-        output[i] = output[i].split(" - ")
-      elif " by " in output[i]:
-        output[i] = output[i].split(" by ")
-      else:
-        attempts += 1
-        break
-      print(output[i][0] + " by " + output[i][1])
-      #Remove leading numbers
-      while output[i][0][0].isdigit() or output[i][0][0] == ".":
-        output[i][0] = output[i][0][2:]
-      #Remove quotes from the song name
-      output[i][0] = output[i][0].replace('"', "")
-      #Remove apostrophes from the song name and artist name
-      output[i][0] = output[i][0].replace("'", "")
-      output[i][1] = output[i][1].replace("'", "")
-      #Remove ft. and feat. from the artist name
-      if " ft. " in output[i][1]:
-        output[i][1] = output[i][1].split(" ft. ")[0]
-      if " feat. " in output[i][1]:
-        output[i][1] = output[i][1].split(" feat. ")[0]
-    sp = spotipy.Spotify(auth_manager=auth_manger_client)
-    for i in range(len(output)):
-      results = sp.search(q="track:" + output[i][0] + " artist:" + output[i][1], limit=1)
-      if len(results['tracks']['items']) > 0:
-        song = results['tracks']['items'][0]
-        artist = ""
-        for art in song['artists']:
-          artist += art['name'] + ", "
-        artist = artist[:len(artist)-2]
-        print(song)
-        songs.append({"name": song['name'], "artist": artist, "album": song['album']['name'], "image": song['album']['images'][0]['url'], "link":song["external_urls"]["spotify"], "id": song['id']})
-      else:
-        output[i][0] = output[i][0][:len(output[i][0])//2]
-        results = sp.search(q="track:" + output[i][0] + " artist:" + output[i][1], limit=1)
-        if len(results['tracks']['items']) > 0:
-          song = results['tracks']['items'][0]
-          artist = ""
-          for art in song['artists']:
-            artist += art['name'] + ", "
-          artist = artist[:len(artist)-2]
-          print(song)
-          songs.append({"name": song['name'], "artist": artist, "album": song['album']['name'], "image": song['album']['images'][0]['url'], "link":song["external_urls"]["spotify"], "id": song['id']})
+    songs = get_songs(output)
     attempts += 1
-    print(songs)
   return jsonify(songs)
 
 @app.route("/playlist/save", methods=["POST"])
@@ -187,38 +191,7 @@ def extend_playlist(playlist_id):
     output = output.split("\n")
     #Remove lines that are empty
     output = [x for x in output if x != '']
-    for i in range(len(output)):
-      if " - " in output[i]:
-        output[i] = output[i].split(" - ")
-      else:
-        output[i] = output[i].split(" by ")
-      print(output[i][0] + " by " + output[i][1])
-      #Remove leading numbers
-      while output[i][0][0].isdigit() or output[i][0][0] == ".":
-        output[i][0] = output[i][0][2:]
-      #Remove quotes from the song name
-      output[i][0] = output[i][0].replace('"', "")
-      #Remove apostrophes from the song name and artist name
-      output[i][0] = output[i][0].replace("'", "")
-      output[i][1] = output[i][1].replace("'", "")
-      #Remove ft. and feat.
-      if " ft. " in output[i][0]:
-        output[i][0] = output[i][0].split(" ft. ")[0]
-      if " feat. " in output[i][0]:
-        output[i][0] = output[i][0].split(" feat. ")[0]
-      #Remove leading and trailing whitespace
-      output[i][0] = output[i][0].strip()
-      output[i][1] = output[i][1].strip()
-      #Search for the song
-      results = sp.search(q="track:" + output[i][0] + " artist:" + output[i][1], limit=1)
-      if len(results['tracks']['items']) > 0:
-        song = results['tracks']['items'][0]
-        artist = ""
-        for art in song['artists']:
-          artist += art['name'] + ", "
-        artist = artist[:len(artist)-2]
-        print(song)
-        songs.append({"name": song['name'], "artist": artist, "album": song['album']['name'], "image": song['album']['images'][0]['url'], "link": song["external_urls"]["spotify"], "id": song['id']})
+    songs = get_songs(output)
     attempts += 1
     print(songs)
   return jsonify(songs)
